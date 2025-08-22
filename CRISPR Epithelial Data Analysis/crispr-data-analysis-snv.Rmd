@@ -1,0 +1,378 @@
+---
+title: "CRISPR-SNV Analysis"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+    code_folding: hide
+---
+
+# **Info**
+## *Library*
+```{r message=FALSE, warning=FALSE}
+#install.packages("tidyverse")
+library(tidyverse)
+#install.packages("dplyr")
+library(dplyr)
+#install.packages("ggplot2")
+library(ggplot2)
+#install.packages("kableExtra")
+library(kableExtra)
+#install.packages("data.table")
+library(data.table)
+#install.packages("ggnewscale")
+library(ggnewscale)
+```
+
+# **GENO: SNV**
+CRISPR-engineered 184-hTERT L9 cell lines
+## *SNV: Data*
+```{r, message=FALSE, warning=FALSE}
+#read in genotype data
+geno.snv <- fread("C:/Users/m-bih/brca-luminal/data/genotype.data.snv.csv")
+
+#read in file with  deletions overlapping genes of interest
+geno.cnv.overlap  <- fread("C://Users/m-bih/brca-luminal/data/overlap.geno.cnv.csv")
+```
+
+## *SNV: Plots*
+### SNV Plot (genotype x-axis [BRCA1-/-, BRCA1+/-, etc])
+```{r, width = 10, height = 8}
+#set classification flags
+brca2_cells <- unique(geno.cnv.overlap$cell_id[geno.cnv.overlap$gene == "BRCA2"])
+brca1_cells <- unique(geno.cnv.overlap$cell_id[geno.cnv.overlap$gene == "BRCA1"])
+
+#add classification to plotting data
+plot_snv <- geno.snv %>%
+  mutate(
+    has_brca2 = cell_id %in% brca2_cells,
+    has_brca1 = cell_id %in% brca1_cells,
+    gene_deletion_status = case_when(
+      has_brca1 & has_brca2 ~ "BRCA1 + BRCA2 del",
+      has_brca1 ~ "BRCA1 del",
+      has_brca2 ~ "BRCA2 del",
+      TRUE ~ "No del"
+    )
+  )
+
+#optional: Set factor levels for legend order
+plot_snv$gene_deletion_status <- factor(
+  plot_snv$gene_deletion_status,
+  levels = c("BRCA1 + BRCA2 del", "BRCA1 del", "BRCA2 del", "No del")
+)
+
+text_size <- 40
+axis_text_angle <- 48
+
+#build plot
+genot_snv_plot <- ggplot(plot_del, aes(x = Genotype, y = snv_count)) +
+  
+#violin plots (first fill scale)
+  geom_violin(aes(fill = Genotype), scale = "width", adjust = 1.5) +
+  #reset fill for next scale
+  ggnewscale::new_scale_fill() +
+  #points colored by gene deletion status
+  geom_point(
+    data = subset(plot_snv, gene_deletion_status != "No del"),
+    aes(x = Genotype, y = snv_count, fill = gene_deletion_status),
+    shape = 21,
+    color = "black",
+    position = position_jitter(width = 0.2, height = 0.1),
+    size = 7,
+    stroke = 0.7
+  ) +
+  #fill colors for deletion status
+  scale_fill_manual(
+    name = "Gene Deletion Status",
+    values = c(
+      "BRCA1 + BRCA2 del" = "green",  
+      "BRCA1 del" = "yellow",          
+      "BRCA2 del" = "purple"           
+    )
+  ) +
+  #median point
+  stat_summary(fun = median, geom = "point", color = "black", size = 4, shape = 18) +
+  #log Y-axis
+  scale_y_log10(limits = c(1, NA), breaks = c(1, 10, 100, 1000)) +
+  # Labels
+  labs(
+    title = "SNV Burden",
+    x = "Genotype",
+    y = "MB Affected"
+  ) +
+  #theme tweaks
+  theme_minimal(base_size = text_size) +
+  theme(
+    legend.position =  "right",
+    legend.title = element_text(size = 32),
+    legend.text = element_text(size = 30),
+    legend.key.size = unit(2, "lines"),
+    legend.spacing.x = unit(0.5, 'cm'),
+    plot.title = element_text(face = "bold", size = text_size + 2, hjust = 0.5),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(face = "bold", size = text_size),
+    axis.text.x = element_blank(),
+    axis.text.y = element_text(size = text_size - 6),
+    panel.border = element_rect(fill = NA, color = "black", size = 1),
+    strip.background = element_rect(fill = "grey90", color = "black", size = 1),
+    panel.spacing = grid::unit(1, "lines")
+  ) +
+  facet_wrap(~ Group, scales = "free_x", ncol = 4)
+
+#save plot
+ggsave("C:/Users/m-bih/brca-luminal/plots/genot_snv_plot_genotype-x-axis.png", plot = genot_snv_plot, width = 29, height = 18, bg = "white", limitsize = FALSE)
+```
+
+## *SNV: Statistics*
+### SNV: % of cells with BRCA1 & BRCA2 Deletion 
+```{r, warning=FALSE, message=FALSE}
+#calculate gene deletion status
+geno.snv <- geno.snv %>%
+  mutate(
+    has_brca2 = cell_id %in% brca2_cells,
+    has_brca1 = cell_id %in% brca1_cells,
+    gene_deletion_status = case_when(
+      has_brca1 & has_brca2 ~ "BRCA1 + BRCA2 del",
+      has_brca1 ~ "BRCA1 del",
+      has_brca2 ~ "BRCA2 del",
+      TRUE ~ "No del"
+    )
+  )
+
+#calculate proportions per patient
+proportions_df <- geno.snv %>%
+  group_by(Genotype, Group, Sample_Name) %>%
+  summarise(
+    total_cells = n(),
+    `BRCA1 del (%)` = sum(gene_deletion_status == "BRCA1 del") / total_cells * 100,
+    `BRCA2 del (%)` = sum(gene_deletion_status == "BRCA2 del") / total_cells * 100
+  ) %>%
+  ungroup() %>%
+  relocate(Genotype, Group, .before = Sample_Name) 
+
+#create table
+proportions_df  %>%
+  kbl(caption = "SNV: % of 184-hTERT cells with BRCA1 & BRCA2 Deletion", digits = 10) %>%
+  kable_classic(html_font = "Cambria") %>%
+  kable_styling()
+```
+
+### SNV: Wilcoxon (Group vs WT) 
+```{r}
+#BRCA1 vs WT
+b1 <- plot_snv %>%
+  filter(Group == "BRCA1", gene_deletion_status %in% c("BRCA1 del"))
+wt <- plot_snv %>%
+  filter(Group == "WT")
+
+#wilcox test
+w.snv.b1.wt <- wilcox.test(b1$snv_count, wt$snv_count)
+#w.snv.b1.wt
+
+#BRCA2 vs WT
+b2 <- plot_snv %>%
+  filter(Group == "BRCA2", gene_deletion_status %in% c("BRCA2 del"))
+wt <- plot_snv %>%
+  filter(Group == "WT")
+
+#wilcox test
+w.snv.b2.wt <- wilcox.test(b2$snv_count, wt$snv_count)
+#w.snv.b2.wt
+```
+
+### SNV: Wilcoxon (Genotype vs WT) 
+```{r}
+#BRCA1 vs WT (LOH)
+b1.loh <- plot_snv %>%
+  filter(Group == "BRCA1", Genotype == "BRCA1-/-", gene_deletion_status %in% c("BRCA1 del"))
+wt <- plot_snv %>%
+  filter(Group == "WT")
+
+#wilcox test
+w.snv.b1.loh.wt <- wilcox.test(b1.loh$snv_count, wt$snv_count)
+#w.snv.b1.loh.wt
+
+#BRCA1 vs WT (HET)
+b1.het <- plot_snv %>%
+  filter(Group == "BRCA1", Genotype == "BRCA1+/-", gene_deletion_status %in% c("BRCA1 del"))
+wt <- plot_snv %>%
+  filter(Group == "WT")
+
+#wilcox test
+w.snv.b1.het.wt <- wilcox.test(b1.het$snv_count, wt$snv_count)
+#w.snv.b1.het.wt
+
+#BRCA2 (A) vs WT
+b2.a <- plot_snv %>%
+  filter(Group == "BRCA2", Genotype == "BRCA2-/- a", gene_deletion_status %in% c("BRCA2 del"))
+wt <- plot_snv %>%
+  filter(Group == "WT")
+
+#wilcox test
+w.snv.b2.a.wt <- wilcox.test(b2.a$snv_count, wt$snv_count)
+#w.snv.b2.a.wt
+
+#BRCA2 (B) vs WT
+b2.b <- plot_snv %>%
+  filter(Group == "BRCA2", Genotype == "BRCA2-/- b", gene_deletion_status %in% c("BRCA2 del"))
+wt <- plot_snv %>%
+  filter(Group == "WT")
+
+#wilcox test
+w.snv.b2.b.wt <- wilcox.test(b2.b$snv_count, wt$snv_count)
+#w.snv.b2.b.wt
+
+#BRCA2 (B) vs WT
+b2.het <- plot_snv %>%
+  filter(Group == "BRCA2", Genotype == "BRCA2+/-", gene_deletion_status %in% c("BRCA2 del"))
+wt <- plot_snv %>%
+  filter(Group == "WT")
+
+#wilcox test
+w.snv.b2.het.wt <- wilcox.test(b2.het$snv_count, wt$snv_count)
+#w.snv.b2.het.wt
+```
+
+### SNV: Median Fold Change (Group)
+```{r}
+#variables
+snv.b1 <- plot_snv %>% filter(Group == "BRCA1", gene_deletion_status == "BRCA1 del") 
+snv.b2 <- plot_snv %>% filter(Group == "BRCA2", gene_deletion_status == "BRCA2 del")
+snv.wt <- plot_snv %>% filter(Group == "WT")
+
+#function to calculate fold change for tnbc CNV Deletions
+compute_fold_change <- function(data_group1, data_group2) {
+  median_group1 <- median(data_group1$snv_count, na.rm = TRUE)
+  median_group2 <- median(data_group2$snv_count, na.rm = TRUE)
+  
+  # Calculate fold change
+  fold_change <- median_group1 / median_group2  
+  return(fold_change)
+}
+
+mfc <- data.frame(
+  Group = c("BRCA1", "BRCA2"),
+  Event = c("SNV", "SNV"),
+  Comparison = c("BRCA1 del vs WT", "BRCA2 del vs WT"),
+  Fold_Change = c(
+    compute_fold_change(snv.b1, snv.wt),
+    compute_fold_change(snv.b2, snv.wt)
+  ),
+ P_Value = c(w.snv.b1.wt$p.value,
+             w.snv.b2.wt$p.value)
+  )
+
+#print df
+ mfc %>%
+  kbl(caption = "Group: BRCA1/2 SNV Burden vs WT", digits = 10) %>%
+  kable_classic(html_font = "Cambria") %>%
+  kable_styling()
+```
+### SNV: Median Fold Change (Genotype)
+```{r}
+#variables
+snv.b1.het <- plot_snv %>% filter(Group == "BRCA1", Genotype == "BRCA1+/-", gene_deletion_status == "BRCA1 del")
+snv.b1.loh <- plot_snv %>% filter(Group == "BRCA1", Genotype == "BRCA1-/-", gene_deletion_status == "BRCA1 del")
+snv.b2.het <- plot_snv %>% filter(Group == "BRCA2", Genotype == "BRCA2+/-", gene_deletion_status == "BRCA2 del")
+snv.b2.a <- plot_snv %>% filter(Group == "BRCA2", Genotype == "BRCA2-/- a", gene_deletion_status == "BRCA2 del")
+snv.b2.b <- plot_snv %>% filter(Group == "BRCA2", Genotype == "BRCA2-/- b", gene_deletion_status == "BRCA2 del")
+snv.wt <- plot_snv %>% filter(Group == "WT")
+
+
+#function to calculate fold change for tnbc CNV Deletions
+compute_fold_change <- function(data_group1, data_group2) {
+  median_group1 <- median(data_group1$snv_count, na.rm = TRUE)
+  median_group2 <- median(data_group2$snv_count, na.rm = TRUE)
+  
+  # Calculate fold change
+  fold_change <- median_group1 / median_group2  
+  return(fold_change)
+}
+
+mfc <- data.frame(
+  Group = c("BRCA1", "BRCA1", "BRCA2", "BRCA2", "BRCA2"),
+  Event = c("SNV", "SNV", "SNV", "SNV", "SNV"),
+  Comparison = c("BRCA1+/-",  "BRCA1-/-", "BRCA2+/-", "BRCA2-/- b", "BRCA2-/- a"),
+  Fold_Change = c(
+    compute_fold_change(snv.b1.het, snv.wt),
+    compute_fold_change(snv.b1.loh, snv.wt),
+    compute_fold_change(snv.b2.het, snv.wt),
+    compute_fold_change(snv.b2.a, snv.wt),
+    compute_fold_change(snv.b2.b, snv.wt)
+  ),
+ P_Value = c(w.snv.b1.loh.wt$p.value,
+             w.snv.b1.het.wt$p.value,
+             w.snv.b2.het.wt$p.value,
+             w.snv.b2.a.wt$p.value,
+             w.snv.b2.b.wt$p.value)
+  )
+
+#print df
+ mfc %>%
+  kbl(caption = "Genotype: BRCA1/2 SNV Burden vs WT", digits = 10) %>%
+  kable_classic(html_font = "Cambria") %>%
+  kable_styling()
+```
+
+### Sample Analysis: BRCA2-/- & BRCA2-/-b
+```{r}
+#Wilcoxon Test
+#!!!!!!!!!!!!!
+
+#BRCA2+/- vs WT
+scnd.hit.het <- plot_snv %>%
+  filter(Genotype == "BRCA2+/-", gene_deletion_status == "BRCA2 del")
+
+frst.hit.het <- plot_snv %>%
+    filter(Genotype == "BRCA2+/-", 
+         gene_deletion_status %in% c("No del", "BRCA1 del"))
+
+#wilcox test
+w.brca2.het <- wilcox.test(scnd.hit.het$snv_count, frst.hit.het$snv_count)
+
+#BRCA2-/- b vs WT
+scnd.hit.loh <- plot_snv %>%
+  filter(Genotype == "BRCA2-/- b", gene_deletion_status == "BRCA2 del")
+
+frst.hit.loh  <- plot_snv %>%
+    filter(Genotype == "BRCA2-/- b", 
+         gene_deletion_status %in% c("No del", "BRCA1 del"))
+
+#wilcox test
+w.brca2.loh.b <- wilcox.test(scnd.hit.loh$snv_count, frst.hit.loh$snv_count)
+
+
+#Median Fold Change
+#!!!!!!!!!!!!!!!!!!
+
+#function to calculate fold change for tnbc CNV Deletions
+compute_fold_change <- function(data_genotype1, data_genotype2) {
+  median_genotype1 <- median(data_genotype1$snv_count, na.rm = TRUE)
+  median_genotype2 <- median(data_genotype2$snv_count, na.rm = TRUE)
+  
+  # Calculate fold change
+  fold_change <- median_genotype1 / median_genotype2  
+  return(fold_change)
+}
+
+mfc <- data.frame(
+  genotype = c("BRCA2+/-", "BRCA2-/- b"),
+  Event = c("SNV", "SNV"),
+  Comparison = c("somatic + germline loss vs germline only", "somatic + germline loss vs germline only"),
+  Fold_Change = c(
+    compute_fold_change(scnd.hit.het, frst.hit.het),
+    compute_fold_change(scnd.hit.loh, frst.hit.loh)
+    )
+  ,
+ P_Value = c(p.adjust(p = w.brca2.het$p.value, method = "BH"),
+             p.adjust(p = w.brca2.loh.b$p.value, method = "BH"))
+  )
+
+#print df
+ mfc %>%
+  kbl(caption = "BRCA2+/- & BRCA2-/-b SNV Burden vs WT", digits = 10) %>%
+  kable_classic(html_font = "Cambria") %>%
+  kable_styling()
+```
+

@@ -1,0 +1,329 @@
+# **GENERATING DATA FRAMES**
+### **Library**
+```{r, warning = FALSE, message = FALSE}
+# install.packages("ggplot2")
+library(ggplot2)
+# install.packages("tidyverse")
+library(tidyverse)
+# install.packages("ggbeeswarm")
+library(ggbeeswarm)
+# install.packages("readr")
+library(readr)
+# install.packages("gridExtra")
+library(gridExtra)
+# install.packages("ggpubr")
+library(ggpubr)
+# install.packages("grid")
+library(grid)
+# install.packages("dplyr")
+library(dplyr)
+# install.packages("gt")
+library(gt)
+# install.packages("biomaRt")
+library(biomaRt)
+# install.packages("RColorBrewer")
+library(RColorBrewer)
+# install.packages("stringr")
+library(stringr)
+# install.packages("vroom")
+library(vroom)
+# install.packages("patchwork")
+library(patchwork)
+# install.packages("tidyr")
+library(tidyr)
+# install.packages("cowplot")
+library(cowplot)
+# install.packages("ggrepel")
+library(ggrepel)
+# install.packages("gdata")
+library(gdata)
+```
+
+### **Data loading CNVs**
+```{r }
+# Define CNV data folder and samples
+cnv_data_dir <- "C:/Users/m-bih/OneDrive/Documents/r-files/julian-code/signatures_dataset_2/DLP/CNA/persample/"
+
+# Genotypes
+genotype_samples_cnv <- c("SA1054", "SA1056", "SA1055", "SA039", "SA906a", "SA906b", "SA1292", "SA1188")
+
+# TNBC
+tnbc_samples_cnv <- c("SA501", "SA535", "SA530", "SA604", "SA605", "SA609", "SA610")
+
+# HGSC
+hgsc_samples_cnv <- c("SA1050", "SA1051", "SA1052", "SA1053", "SA1181", "SA1184", "DG1197", "SA1049",
+                      "SA1096", "SA1162", "SA1182", "DG1134", "SA1047", "SA1093", "SA1180", "SA1091")
+
+# Generate CNV data dictionary
+list.files(path = cnv_data_dir, pattern = "_hscn.csv", full.names = T) %>% 
+  as.data.frame() %>% 
+  janitor::clean_names() %>% 
+  rename(file_name = x) %>% 
+  mutate(sample_name = str_extract(file_name, "(?<=/)[^/]+(?=_hscn.csv)"),
+         group = case_when(
+           sample_name %in% genotype_samples_cnv ~ "Genotypes",
+           sample_name %in% tnbc_samples_cnv ~ "TNBC",
+           sample_name %in% hgsc_samples_cnv ~ "HGSC",
+           TRUE ~ "Other"
+         )) %>%
+  dplyr::filter(group != "Other") %>%
+  arrange(group, sample_name) -> CNV_Data.Dictionary
+
+CNV_Data.Dictionary
+```
+
+### **Data loading SNVs**
+```{r}
+# Directory where the SNV data is stored
+snv_data_dir <- "C:/Users/m-bih/OneDrive/Documents/r-files/julian-code/signatures_dataset_2/DLP/SNV"
+
+genotype_samples_snv <- c("SA1054", "SA1056", "SA1055", "SA039", "SA906a", "SA906b", "SA1292", "SA1188")
+tnbc_samples_snv <- c("SA501", "SA535", "SA530", "SA604", "SA605", "SA609", "SA610")
+hgsc_samples_snv <- c("SA1050", "SA1051", "SA1052", "SA1053", "SA1181", "SA1184", "DG1197", "SA1049", "SA1096", "SA1162", "SA1182", "DG1134", "SA1047", "SA1093", "SA1180", "SA1091")
+
+# Create Data Dictionary for SNV data
+list.files(path = snv_data_dir, pattern = "snv_counts.csv", full.names = T) %>% 
+  as.data.frame() %>% 
+  janitor::clean_names() %>% 
+  rename(file_name = x) %>% 
+  mutate(sample_name = str_extract(file_name, "(?<=/)[^/]+(?=snv_counts.csv)"),
+         group = case_when(
+           sample_name %in% genotype_samples_snv ~ "Genotypes",
+           sample_name %in% tnbc_samples_snv ~ "TNBC",
+           sample_name %in% hgsc_samples_snv ~ "HGSC",
+           TRUE ~ "Other"
+         )) %>%
+  dplyr::filter(group != "Other") %>%
+  arrange(group, sample_name) -> SNV_Data.Dictionary
+SNV_Data.Dictionary
+```
+
+### **Dictionary Creation**
+```{r}
+# Define sample lists
+genotype_samples <- c("SA1054", "SA1056", "SA1055", "SA039", "SA906a", "SA906b", "SA1292", "SA1188")
+tnbc_samples <- c("SA501", "SA535", "SA530", "SA604", "SA605", "SA609", "SA610")
+hgsc_samples <- c("SA1050", "SA1051", "SA1052", "SA1053", "SA1181", "SA1184", "DG1197", "SA1049", "SA1096", "SA1162", "SA1182", "DG1134", "SA1047", "SA1093", "SA1180", "SA1091")
+
+# Function to generate a data dictionary
+create_data_dictionary <- function(data_dir, file_pattern, sample_suffix) {
+  list.files(path = data_dir, pattern = file_pattern, full.names = T) %>% 
+    as.data.frame() %>% 
+    janitor::clean_names() %>% 
+    rename(file_name = x) %>% 
+    mutate(sample_name = str_extract(file_name, paste0("(?<=/)[^/]+(?=", sample_suffix, ")")),
+           group = case_when(
+             sample_name %in% genotype_samples ~ "Genotypes",
+             sample_name %in% tnbc_samples ~ "TNBC",
+             sample_name %in% hgsc_samples ~ "HGSC",
+             TRUE ~ "Other"
+           ),
+           data_type = ifelse(str_detect(file_name, "_hscn.csv"), "CNV", "SNV")) %>%
+    dplyr::filter(group != "Other") %>%
+    arrange(group, data_type, sample_name)
+}
+
+# Combine CNV and SNV data into a single data dictionary
+Combined_Data.Dictionary <- rbind(
+  create_data_dictionary(cnv_data_dir, "_hscn.csv", "_hscn"),
+  create_data_dictionary(snv_data_dir, "snv_counts.csv", "_snv_counts")
+)
+Combined_Data.Dictionary
+```
+
+### **CNV: f(x) to load the data based on attributes in the dictionary**
+```{r}
+load_and_filter_data <- function(file_path, columns) {
+  data <- read_csv(file_path)
+  data <- dplyr::select(data, all_of(columns))
+  data <- data[!is.na(data$state), ]
+  return(data)
+}
+
+
+load_data_from_dictionary <- function(group_name, data_type_filter="CNV") {
+  group_data <- Combined_Data.Dictionary %>% 
+    dplyr::filter(group == group_name, data_type == data_type_filter)
+  
+  data_list <- lapply(1:nrow(group_data), function(i) {
+    file_path <- group_data$file_name[i]
+    data_type <- group_data$data_type[i]
+    sample_name <- group_data$sample_name[i]
+    
+    #adjust columns to load based on data type
+    columns_to_load <- c("patient", "cell_id", "chr", "state",  "start", "end")
+    
+    df <- load_and_filter_data(file_path, columns_to_load)
+    df$Data_Type <- data_type
+    df$Sample_Name <- sample_name
+    
+    return(df)
+  })
+  
+  #combine list of data frames into a single data frame for the group
+  combined_data <- do.call(rbind, data_list)
+  
+  return(combined_data)
+}
+```
+
+### **Add HRD status**
+```{r}
+#supplementary table 4
+sup_table_4 <- read.delim("C:/Users/m-bih/OneDrive/Documents/r-files/julian-code/signatures_dataset_2/sup_table_4.txt", header = TRUE)
+
+sup_table_4 <- sup_table_4 %>% 
+  dplyr::select(patient_id, sample_id, signature_stratum)
+#filter with dplyr to get all the unique values of 'signature_stratum'
+hrd_stat_from_sup <- sup_table_4
+
+#the function to add HRD status from the sup_table_4
+add_hrd_status_from_sup <- function(dataset) {
+  #merge the dataset with the hrd_stat_from_sup data based on patient_id
+  merged_data <- left_join(dataset, hrd_stat_from_sup, by = c("patient" = "patient_id"))
+  
+  #assign 'signature_stratum' value to 'HRD_Status' if it's not NA, otherwise label as "No Info"
+  merged_data$HRD_Status <- ifelse(!is.na(merged_data$signature_stratum), merged_data$signature_stratum, "No Info")
+  
+  #drop the 'signature_stratum' column as it's no longer needed
+  merged_data$signature_stratum <- NULL
+  
+  return(merged_data)
+}
+```
+
+# **GENO**
+### **generate GENO-CNV data**
+```{r, message=FALSE, error=FALSE}
+Genotypes_data <- load_data_from_dictionary("Genotypes")
+
+#assign samples to their corresponding genotypes
+Genotypes_data <- Genotypes_data %>%
+  mutate(Genotype = case_when(
+    Sample_Name %in% c("SA1054") ~ "BRCA1-/-",
+    Sample_Name %in% c("SA1056") ~ "BRCA2-/- a",
+    Sample_Name %in% c("SA1055") ~ "BRCA2-/- b",
+    Sample_Name %in% c("SA039") ~ "WT",
+    Sample_Name %in% c("SA906a") ~ "TP53-/- a",
+    Sample_Name %in% c("SA906b") ~ "TP53-/- b",
+    Sample_Name %in% c("SA1292") ~ "BRCA1+/-",
+    Sample_Name %in% c("SA1188") ~ "BRCA2+/-",
+    TRUE ~ "Other"
+  ))
+
+#group samples further to a higher category for plotting
+Genotypes_data <- Genotypes_data %>%
+  mutate(Group = case_when(
+    grepl("TP53", Genotype) ~ "TP53",
+    grepl("BRCA1", Genotype) ~ "BRCA1",
+    grepl("BRCA2", Genotype) ~ "BRCA2",
+    Genotype == "WT" ~ "WT",
+    TRUE ~ Genotype  # This will keep any other genotypes unchanged
+  ))
+
+#calculate the size of each segment in base pairs
+Genotypes_data$segment_size_bp <- Genotypes_data$end - Genotypes_data$start + 1
+
+#convert to MB
+Genotypes_data$segment_size_MB <- Genotypes_data$segment_size_bp / 1e6
+
+#save file
+write.csv(Genotypes_data, file = "C:/Users/m-bih/brca-luminal/data/genotype.data.cnv.csv", row.names = TRUE)
+```
+## **GENO: Align CNV data with BRCA1, BRCA2, and TP53 Exons**
+### **Library**
+```{r}
+#install.packages("kableExtra")
+library(kableExtra)
+#install.packages("GenomicRanges")
+library(GenomicRanges)
+#BiocManager::install("rtracklayer")
+library(rtracklayer)
+#BiocManager::install("GenomicRanges")
+library(GenomicRanges)
+#install.packages("rtracklayer")
+library(rtracklayer)
+#BiocManager::install("AnnotationHub")
+library(AnnotationHub)
+```
+
+### **Load CNV Data into dataframes and GRanges files**
+```{r}
+#!!!!!!!!!!!!!!!!!!!!!!!!! CREATE GR OBJECTS !!!!!!!!!!!!!!!!!!!!!!!!!
+#deletions 
+del <- Genotypes_data %>% dplyr::filter(state < 2)
+
+#rename
+cnv_data <- del
+
+#create GRanges object
+gr <- GRanges(
+  seqnames = cnv_data$chr,
+  ranges = IRanges(start = cnv_data$start, end = cnv_data$end),
+  mcols = cnv_data[, !(names(cnv_data) %in% c("chr", "start", "end"))]
+  )
+```
+
+### **Extract Exon Annotations**
+```{r}
+#Retrieve canonical transcript for BRCA1, BRCA2, TP53
+  #connect to Ensembl (GRCh38 by default)
+ensembl <- useEnsembl(biomart = "ensembl", 
+                      dataset = "hsapiens_gene_ensembl")
+
+#get canonical transcript for BRCA1
+canonical <- getBM(
+  attributes = c("external_gene_name", "ensembl_gene_id", 
+                 "ensembl_transcript_id", "transcript_is_canonical"),
+  filters = "external_gene_name",
+  values = c("BRCA1", "BRCA2", "TP53"),
+  mart = ensembl
+)
+
+#filter to canonical transcript
+canonical <- na.omit(canonical)
+transcript_ids <- canonical$ensembl_transcript_id
+
+#Retrieve gene exon annotations from AnnotationHub
+library(AnnotationHub)
+ah <- AnnotationHub()
+
+#query for Ensembl GTFs for Homo sapiens GRCh38
+gtf <- query(ah, c("Homo sapiens", "Ensembl", "GRCh38", "gtf"))[[1]]
+
+#filter for exon entries
+exons <- gtf[gtf$type == "exon"]
+
+# Filter out entries without exon_number
+exons <- exons[!is.na(exons$exon_number)]
+
+#filter to only the desired transcript IDs (if provided)
+if (!is.null(transcript_ids)) {
+  exons <- exons[exons$transcript_id %in% transcript_ids]
+}
+```
+
+### **Filter for BRCA1, BRCA2, TP53 Exons**
+```{r}
+#filter to target genes
+genes = c("BRCA1", "BRCA2", "TP53")
+exons <- exons[exons$gene_name %in% genes]
+```
+
+### **Find Overlaps Between CNVs and Exons**
+```{r}
+cnv_gr <- gr
+cnv_df <- cnv_data
+hits <- findOverlaps(cnv_gr, exons)
+
+geno.overlap <- data.frame(
+  cnv_df[queryHits(hits), ],
+  gene = exons$gene_name[subjectHits(hits)],
+  exon_number = exons$exon_number[subjectHits(hits)],
+  exon_start = start(exons)[subjectHits(hits)],
+  exon_end = end(exons)[subjectHits(hits)]
+)
+
+#save the matrix as a CSV file
+write.csv(geno.overlap, file = "C:/Users/m-bih/brca-luminal/data/overlap.geno.cnv.csv", row.names = TRUE)
+```
